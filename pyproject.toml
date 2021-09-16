@@ -1,0 +1,38 @@
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.poetry]
+name = "pege"
+version = "0.0.1"
+description = "Protein embeddings to describe local electrostic enviroments"
+authors = ["Pedro Reis <pdreis@fc.ul.pt>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/bayer-science-for-a-better-life/pege"
+repository = "https://github.com/bayer-science-for-a-better-life/pege"
+classifiers = [
+	"Development Status :: 5 - Production/Stable",
+	"Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.6.2"
+torch = "^1.9.0"
+pytorch-lightning = "^1.4.7"
+egnn-pytorch = "^0.2.6"
+
+[tool.poetry.dev-dependencies]
+mypy = "*"
+bump2version = "*"
+black = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
