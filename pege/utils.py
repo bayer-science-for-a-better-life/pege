@@ -51,7 +51,7 @@ def classify_atom(aname: str, resname: str) -> str:
         return f"{aname}_{resname}"
 
 
-def pdb2feats(fname: str):
+def pdb2feats(fname: str) -> tuple:
     def iter_f(fname):
         with open(fname) as f:
             for line in f:
