@@ -9,7 +9,7 @@ multi_line_output = 3
 
 [tool.poetry]
 name = "pege"
-version = "0.0.2"
+version = "0.1.0"
 description = "Protein embeddings to describe local electrostic enviroments"
 authors = ["Pedro Reis <pdreis@fc.ul.pt>"]
 license = "MIT"
@@ -23,10 +23,11 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.6.2"
+python = ">=3.6.2,<4.0"
 torch = "^1.9.0"
 pytorch-lightning = "^1.4.7"
 egnn-pytorch = "^0.2.6"
+pdbmender = "^0.3.0"
 
 [tool.poetry.dev-dependencies]
 mypy = "*"

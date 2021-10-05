@@ -1,25 +1,8 @@
 import torch
-
-OHE_ATOMS_GRAPH = [
-    "H",
-    "N",
-    "NZ_LYS",
-    "NH_ARG",
-    "O_AMIDE",
-    "OH_TYR",
-    "NE2_HIS",
-    "SD_MET",
-    "SG_CYS",
-    "OG_SER",
-    "O",
-    "NE1_TRP",
-    "OG1_THR",
-    "O_COOH",
-    "NE_ARG",
-    "N_AMIDE",
-    "ND1_HIS",
-]
-
+import os
+from pdbmender import mend_pdb, prepare_for_addHtaut, add_tautomers, identify_tit_sites, rm_cys_bridges, identify_cter
+from pdbmender.formats import get_chains_from_file
+from pege.constants import OHE_ATOMS_GRAPH, AA_HS
 
 def read_pdb_line(line: str) -> list:
     aname = line[12:16].strip()
@@ -34,13 +17,16 @@ def read_pdb_line(line: str) -> list:
 
 
 def classify_atom(aname: str, resname: str) -> str:
+    if aname.startswith('H') and (resname in AA_HS and aname in AA_HS[resname]):
+        return 'H'
+
     if aname in ("N", "O"):
         if resname != "NTR":
             return aname
         else:
             return "NZ_LYS"
     elif resname in ("CTR", "ASP", "GLU"):
-        return f"O_COOH"
+        return "O_COOH"
     elif resname in ("GLN", "ASN"):
         return f"{aname[0]}_AMIDE"
     elif resname == "ARG" and aname in ("NH1", "NH2"):
@@ -50,30 +36,152 @@ def classify_atom(aname: str, resname: str) -> str:
     else:
         return f"{aname}_{resname}"
 
-
-def pdb2feats(fname: str) -> tuple:
-    def iter_f(fname):
-        with open(fname) as f:
-            for line in f:
+def iter_f(fname):
+    with open(fname) as f:
+        for line in f:
+            if line.startswith('ATOM '):
                 yield line
 
-    coords, feats, anumbs, details = [], [], [], []
+
+def get_atom_info(fname):
+    original_atom_details = {}
+    termini_restypes = {}
     for line in iter_f(fname):
-        if not line.startswith("ATOM "):
+        aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
+        inscode = line[26]
+        details = (chain, resnumb, resname, aname, inscode)
+        original_atom_details[anumb] = details
+        
+    original_atom_numbs = original_atom_details.keys()
+    original_atom_infos = original_atom_details.values()
+    
+    return original_atom_numbs, original_atom_infos
+
+
+def fix_structure(fname, chains_res, ff):
+    sysname = fname.split('.pdb')[0]
+    pdb_cleaned = f"{sysname}_cleaned.pdb"
+    logfile_mend = "LOG_pdb2pqr"
+    mend_pdb(fname, pdb_cleaned, ff, ff, logfile=logfile_mend)
+
+    chains_res, cys_bridges = rm_cys_bridges(chains_res, logfile_mend)
+
+    old_ctrs = {chain: resnumb for chain, residues in chains_res.items() for resnumb, resname in residues.items() if resname == 'CTR'}
+    new_ctrs = identify_cter(pdb_cleaned, old_ctrs)
+    for chain, resnumb in new_ctrs.items():
+        chains_res[chain][str(resnumb)] = "CTR"
+
+    output_pdb = f"{sysname}_final.pdb"
+    _, renumbered = add_tautomers(pdb_cleaned, chains_res, ff, output_pdb)
+    return output_pdb, chains_res, renumbered
+
+
+
+def get_termini_info(fname, chains_res):
+    termini_resnumbs = {chain: [None, None] for chain in chains_res.keys()}
+    for chain, residues in chains_res.items():
+        for resnumb, resname in residues.items():
+            resnumb = int(resnumb)
+            if resname == "NTR" and not termini_resnumbs[chain][0]:
+                termini_resnumbs[chain][0] = resnumb
+            elif resname == "CTR" and not termini_resnumbs[chain][1]:
+                termini_resnumbs[chain][1] = resnumb
+
+
+    termini_resnames = {chain: [None, None] for chain in chains_res.keys()}
+    for line in iter_f(fname):
+        aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
+
+        if termini_resnumbs[chain][0] and resnumb == termini_resnumbs[chain][0]:
+            termini_resnames[chain][0] = resname
+        elif termini_resnumbs[chain][1] and resnumb == termini_resnumbs[chain][1]:
+            termini_resnames[chain][1] = resname
+
+    return termini_resnumbs, termini_resnames
+
+
+def pdb2feats(fname: str, save=True, ff="GROMOS") -> tuple:
+    chains = get_chains_from_file(fname)
+    chains_res = identify_tit_sites(fname, chains, add_ser_thr=True)
+
+    original_atom_details = get_atom_info(fname)
+
+    output_pdb, chains_res, renumbered = fix_structure(fname, chains_res, ff)
+
+    termini_details = get_termini_info(fname, chains_res)
+
+    coords, feats, anumbs, details, aindices = encode_structure(output_pdb, termini_details, original_atom_details, renumbered)
+
+    if not save:
+        os.system(f'rm -f {output_pdb} *_cleaned.pdb* LOG* removed.pqr')
+
+    return coords, feats, anumbs, details, aindices
+
+def encode_structure(output_pdb, termini_details, original_atom_details, renumbered):
+    termini_resnumbs, termini_resnames = termini_details
+    original_atom_numbs, original_atom_infos = original_atom_details
+    
+    coords, feats, anumbs, details = [], [], [], []
+    aindices = {}
+    
+    for line in iter_f(output_pdb):
+        aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
+
+        b, icode = line[16], line[26]
+        if b not in (" ", "A") or icode != " ":
             continue
 
-        aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
+        if chain in termini_resnumbs and resnumb in termini_resnumbs[chain]:
+            i_ter = termini_resnumbs[chain].index(resnumb)
+            ter_type = "NTR" if i_ter == 0 else "CTR"
+
+            if ter_type == "NTR" and aname in ('N', 'H1', 'H2', 'H3'):
+                resname = "NTR"
+            elif aname in ('O1', 'O2', 'HO11', 'HO21', 'HO12', 'HO22'):
+                resname = "CTR"
+
+        if aname[0] not in "NOS" and (resname not in AA_HS or aname not in AA_HS[resname]):
+            continue
+            
         res = classify_atom(aname, resname)
 
         if res in OHE_ATOMS_GRAPH:
             res_ohe = OHE_ATOMS_GRAPH.index(res)
 
+            ainfo = (chain, resnumb, resname, aname, ' ')
+
             coords.append((x, y, z))
             feats.append(res_ohe)
             anumbs.append(anumb)
-            details.append((chain, resnumb, resname, aname))
+            details.append(ainfo)
+
+            if resnumb in renumbered.keys():
+                old_resnumb, inscode = renumbered[resnumb]
+                ainfo_search = (chain, old_resnumb, resname, aname, inscode)
+            elif resname in ('NTR', 'CTR'):
+                old_aname = aname
+                if resname == 'NTR':
+                    old_resname = termini_resnames[chain][0]
+                elif resname == 'CTR':
+                    converted_atoms = {'O1': 'O', 'O2': 'OXT'}
+                    if aname in converted_atoms:
+                        old_aname = converted_atoms[aname]
+                    old_resname = termini_resnames[chain][1]
+                ainfo_search = (chain, resnumb, old_resname, old_aname, ' ')
+            else:
+                ainfo_search = ainfo
+
+            if ainfo_search in original_atom_infos:
+                old_anumb = list(original_atom_numbs)[list(original_atom_infos).index(ainfo_search)]
+                aindices[old_anumb] = len(anumbs) - 1
+                # print(f'{line.strip()}   {res:10}   {old_anumb}')
+            
+            elif res != 'H':
+                warning_msg = f'WARNING: atom {anumb} in {output_pdb} will be ignored'
+                print(warning_msg)
 
     coords = torch.tensor(coords).reshape(1, -1, 3)
     feats = torch.tensor(feats).reshape(1, -1)
 
-    return coords, feats, anumbs, details
+    return coords, feats, anumbs, details, aindices
+

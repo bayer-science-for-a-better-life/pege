@@ -3,7 +3,18 @@ sys.path.insert(0, '../')
 
 from pege import Pege
 
-fname = "4lzt.pdb"    
+fname = "1cet.pdb"    
 protein = Pege(fname)
-atom_embs = protein.get_atoms([1000, 1001, 1010, 1011], ignore_missing=True)
-print(atom_embs.shape)
+
+#print(protein.embs.shape)
+#for anumb, feat in zip(protein.anumbs, protein.feats[0]):
+#    print(anumb, feat)
+
+print(protein.asdf())
+print(protein.get_protein().shape)
+
+atom_embs = protein.get_atoms([2292, 2295], ignore_missing=True)
+print(atom_embs.sum())
+
+res_embs = protein.get_residues([328], ignore_missing=True)
+print(res_embs.sum())

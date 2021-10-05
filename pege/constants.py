@@ -1,0 +1,32 @@
+OHE_ATOMS_GRAPH = [
+    "H",
+    "N",
+    "NZ_LYS",
+    "NH_ARG",
+    "O_AMIDE",
+    "OH_TYR",
+    "NE2_HIS",
+    "SD_MET",
+    "SG_CYS",
+    "OG_SER",
+    "O",
+    "NE1_TRP",
+    "OG1_THR",
+    "O_COOH",
+    "NE_ARG",
+    "N_AMIDE",
+    "ND1_HIS",
+]
+
+AA_HS = {
+    "ASP": ["HD11", "HD21", "HD12", "HD22"],
+    "CTR": ["HO11", "HO21", "HO12", "HO22"],
+    "CYS": ["HG1", "HG2", "HG3"],
+    "GLU": ["HE11", "HE21", "HE12", "HE22"],
+    "HIS": ["HD1", "HE2"],
+    "LYS": ["HZ1", "HZ2", "HZ3"],
+    "NTR": ["H1", "H2", "H3"],
+    "TYR": ["HH1", "HH2"],
+    "SER": ["HG1", "HG2", "HG3"],
+    "THR": ["HG1", "HG2", "HG3"],
+}
