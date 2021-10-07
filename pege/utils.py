@@ -58,11 +58,19 @@ def get_atom_info(fname):
     return original_atom_numbs, original_atom_infos
 
 
-def fix_structure(fname, chains_res, ff):
-    sysname = fname.split('.pdb')[0]
+def fix_structure(fname, ff):
+    sysname = fname
+    if '.pdb' in fname:
+        sysname = fname.split('.pdb')[0]
+    elif '.pqr' in fname:
+        sysname = fname.split('.pqr')[0]
+
     pdb_cleaned = f"{sysname}_cleaned.pdb"
     logfile_mend = "LOG_pdb2pqr"
-    mend_pdb(fname, pdb_cleaned, ff, ff, logfile=logfile_mend)
+    renumbered = mend_pdb(fname, pdb_cleaned, ff, ff, logfile=logfile_mend)
+    
+    chains = get_chains_from_file(fname)
+    chains_res = identify_tit_sites(pdb_cleaned, chains, add_ser_thr=True)
 
     chains_res, cys_bridges = rm_cys_bridges(chains_res, logfile_mend)
 
@@ -72,7 +80,9 @@ def fix_structure(fname, chains_res, ff):
         chains_res[chain][str(resnumb)] = "CTR"
 
     output_pdb = f"{sysname}_final.pdb"
-    _, renumbered = add_tautomers(pdb_cleaned, chains_res, ff, output_pdb)
+    _ = add_tautomers(pdb_cleaned, chains_res, ff, output_pdb)
+
+    os.system(f'rm {pdb_cleaned} LOG* removed.pqr addhtaut_cleaned.pdb')
     return output_pdb, chains_res, renumbered
 
 
@@ -101,19 +111,16 @@ def get_termini_info(fname, chains_res):
 
 
 def pdb2feats(fname: str, save=True, ff="GROMOS") -> tuple:
-    chains = get_chains_from_file(fname)
-    chains_res = identify_tit_sites(fname, chains, add_ser_thr=True)
-
     original_atom_details = get_atom_info(fname)
 
-    output_pdb, chains_res, renumbered = fix_structure(fname, chains_res, ff)
+    output_pdb, chains_res, renumbered = fix_structure(fname, ff)
 
     termini_details = get_termini_info(fname, chains_res)
 
     coords, feats, anumbs, details, aindices = encode_structure(output_pdb, termini_details, original_atom_details, renumbered)
 
     if not save:
-        os.system(f'rm -f {output_pdb} *_cleaned.pdb* LOG* removed.pqr')
+        os.system(f'rm -f {output_pdb}')
 
     return coords, feats, anumbs, details, aindices
 
@@ -178,7 +185,7 @@ def encode_structure(output_pdb, termini_details, original_atom_details, renumbe
             
             elif res != 'H':
                 warning_msg = f'WARNING: atom {anumb} in {output_pdb} will be ignored'
-                print(warning_msg)
+                print(warning_msg, line.strip())
 
     coords = torch.tensor(coords).reshape(1, -1, 3)
     feats = torch.tensor(feats).reshape(1, -1)
