@@ -2,6 +2,8 @@ from torch import Tensor
 from pege.egnn import model
 from pege.utils import pdb2feats
 import pandas as pd
+from pdbmender.formats import new_pqr_line
+
 
 class Pege:
     """
@@ -28,7 +30,9 @@ class Pege:
         Returns
     """
 
-    def __init__(self, path: str):
+    def __init__(
+        self, path: str, save_final_pdb: bool = False, ignore_added: bool = True
+    ):
         """
         Parameters
         ----------
@@ -36,22 +40,48 @@ class Pege:
             The protein PDB file path
         """
         self.path = path
-        self.coords, self.feats, self.anumbs, self.details, self.aindices = pdb2feats(path, save=False)
+        self.coords, self.feats, self.anumbs, self.details, self.aindices = pdb2feats(
+            path, save=save_final_pdb
+        )
+        self.natoms = self.coords.shape[1]
         self.embs = model(self.coords, self.feats).squeeze()
 
-    def asdf(self):    
+    def as_df(self) -> pd.DataFrame:
         aindices_old = list(self.aindices.keys())
         aindices_new = list(self.aindices.values())
         df_dict = {
-            'anumb': self.anumbs,
-            'details': self.details,
-            'resnumbs': [i[1] for i in self.details],
-            'embs': self.embs.detach().numpy().tolist(),
-            'feats': self.feats[0],
-            'coords': self.coords[0].tolist(),
-            'old_anumb': [aindices_old[aindices_new.index(i)] if i in aindices_new else None for i in range(len(self.anumbs))]
+            "anumb": self.anumbs,
+            "details": self.details,
+            "resnumbs": [i[1] for i in self.details],
+            "embs": self.embs.detach().numpy().tolist(),
+            "feats": self.feats[0],
+            "coords": self.coords[0].tolist(),
+            "old_anumb": [
+                aindices_old[aindices_new.index(i)] if i in aindices_new else None
+                for i in range(len(self.anumbs))
+            ],
         }
         return pd.DataFrame(df_dict)
+
+    def as_pdb(self, to_file: bool = None) -> str:
+        pdb = []
+        for i, line_df in self.as_df().iterrows():
+            x, y, z = line_df["coords"]
+            chain, resnumb, resname, aname, _ = line_df["details"]
+            feat = line_df["feats"]
+            anumb = line_df["anumb"]
+
+            new_line = new_pqr_line(
+                anumb, aname, resname, resnumb, x, y, z, feat, 0.0, chain=chain
+            )
+            pdb.append(new_line)
+
+        pdb_content = "".join(pdb)
+        if to_file:
+            with open(to_file, "w") as f:
+                f.write(pdb_content)
+
+        return pdb_content
 
     def get_protein(self, pooling: str = "avg") -> Tensor:
         """Get the protein embedding.
@@ -104,7 +134,8 @@ class Pege:
         atom_is = []
         for anumb in atom_numbers:
             if anumb not in self.aindices:
-                if not ignore_missing: raise Exception(f"Atom {anumb} not present")
+                if not ignore_missing:
+                    raise Exception(f"Atom {anumb} not present")
             else:
                 a_i = self.aindices[anumb]
                 atom_is.append(a_i)
@@ -143,8 +174,12 @@ class Pege:
             If some of the atoms present in atom_numbers are not found.
             Can be turned off by using ignore_missing.
         """
-        atom_numbers = list(self.asdf().query("resnumbs == @residue_numbers")['old_anumb'])
-        return self.get_atoms(atom_numbers, ignore_missing=ignore_missing, pooling=pooling)
+        atom_numbers = list(
+            self.asdf().query("resnumbs == @residue_numbers")["old_anumb"]
+        )
+        return self.get_atoms(
+            atom_numbers, ignore_missing=ignore_missing, pooling=pooling
+        )
 
     @staticmethod
     def apply_pool(t: Tensor, ptype: str) -> Tensor:

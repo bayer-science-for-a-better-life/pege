@@ -2,7 +2,6 @@ import torch
 import os
 from pdbmender import (
     mend_pdb,
-    prepare_for_addHtaut,
     add_tautomers,
     identify_tit_sites,
     rm_cys_bridges,
@@ -149,12 +148,34 @@ def pdb2feats(fname: str, save=True, ff="GROMOS") -> tuple:
     return coords, feats, anumbs, details, aindices
 
 
-def encode_structure(output_pdb, termini_details, original_atom_details, renumbered):
+def map_atoms_2_class(ohe_atoms: dict) -> dict:
+    atom_2_class = {}
+    for aclass, residues in ohe_atoms.items():
+        for (residue, atypes) in residues:
+            if isinstance(atypes, str):
+                atom_2_class[(residue, atypes)] = aclass
+            else:
+                for atype in atypes:
+                    atom_2_class[(residue, atype)] = aclass
+    return atom_2_class
+
+
+def encode_structure(
+    output_pdb,
+    termini_details,
+    original_atom_details,
+    renumbered,
+    to_include=OHE_ATOMS_GRAPH,
+):
     termini_resnumbs, termini_resnames = termini_details
     original_atom_numbs, original_atom_infos = original_atom_details
 
     coords, feats, anumbs, details = [], [], [], []
     aindices = {}
+
+    atom_classes = list(to_include.keys())
+    atoms_2_class = map_atoms_2_class(to_include)
+    atoms_to_include = atoms_2_class.keys()
 
     for line in iter_f(output_pdb):
         aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
@@ -172,16 +193,17 @@ def encode_structure(output_pdb, termini_details, original_atom_details, renumbe
             elif aname in ("O1", "O2", "HO11", "HO21", "HO12", "HO22"):
                 resname = "CTR"
 
-        if (
-            aname[0] not in "NOS"
-            and (resname not in AA_HS or aname not in AA_HS[resname])
-        ) and aname != "CA":
+        if (resname, aname) in atoms_to_include:
+            res = atoms_2_class[(resname, aname)]
+        elif (None, aname) in atoms_to_include:
+            res = atoms_2_class[(None, aname)]
+        else:
             continue
 
-        res = classify_atom(aname, resname)
+        # res = classify_atom(aname, resname) # deprecated
 
-        if res in OHE_ATOMS_GRAPH:
-            res_ohe = OHE_ATOMS_GRAPH.index(res)
+        if res in atom_classes:
+            res_ohe = atom_classes.index(res)
 
             ainfo = (chain, resnumb, resname, aname, " ")
 

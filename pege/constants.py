@@ -1,24 +1,3 @@
-OHE_ATOMS_GRAPH = [
-    "H",
-    "CA",
-    "N",
-    "NZ_LYS",
-    "NH_ARG",
-    "NE_ARG",
-    "NE1_TRP",
-    "NE2_HIS",
-    "ND1_HIS",
-    "N_AMIDE",    
-    "O",
-    "O_COOH",
-    "O_AMIDE",
-    "OG_SER",    
-    "OH_TYR",
-    "OG1_THR",
-    "SG_CYS",
-    "SD_MET",
-]
-
 AA_HS = {
     "ASP": ["HD11", "HD21", "HD12", "HD22"],
     "CTR": ["HO11", "HO21", "HO12", "HO22"],
@@ -31,3 +10,26 @@ AA_HS = {
     "SER": ["HG1", "HG2", "HG3"],
     "THR": ["HG1", "HG2", "HG3"],
 }
+
+OHE_ATOMS_GRAPH = {
+    "H": [(res, atoms) for res, atoms in AA_HS.items()],
+    "CA": [(None, ["CA"])],
+    "N": [(None, ["N"])],
+    "NZ_LYS": [("LYS", "NZ"), ("NTR", "N")],
+    "NH_ARG": [("ARG", ["NH1", "NH2"])],
+    "NE_ARG": [("ARG", "NE")],
+    "NE1_TRP": [("TRP", "NE1")],
+    "NE2_HIS": [("HIS", "NE2")],
+    "ND1_HIS": [("HIS", "ND1")],
+    "N_AMIDE": [("GLN", "NE2"), ("ASN", "ND2")],
+    "O": [(None, "O")],
+    "O_COOH": [("GLU", ["OE1", "OE2"]), ("ASP", ["OD1", "OD2"]), ("CTR", ["O1", "O2"])],
+    "O_AMIDE": [("GLN", "OE1"), ("ASN", "OD1")],
+    "OG_SER": [("SER", "OG")],
+    "OH_TYR": [("TYR", "OH")],
+    "OG1_THR": [("THR", "OG1")],
+    "SG_CYS": [(None, "SG")],
+    "SD_MET": [("MET", "SD")],
+}
+
+# TODO: check S-S how to deal with bridges
