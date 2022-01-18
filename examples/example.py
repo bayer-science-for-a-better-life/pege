@@ -18,10 +18,9 @@ from pprint import pprint
 
 for chain, residues in protein.chain_res.items():
     for residue in residues:
-        print(f"\n{residue}")
+        print(f"\n{residue if not isinstance(residue, str) else residue + '-TERMINAL'}")
         pprint(protein.get_residue_titration_curve(chain, residue))
-
-print(protein.get_residue_taut_probs("A", 1, 10.0))
+        print(protein.get_residue_taut_probs("A", residue, -5.5))
 
 exit()
 

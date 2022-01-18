@@ -1,4 +1,4 @@
-from torch import Tensor, flip
+from torch import Tensor, flip, clamp
 import random
 
 # from pege.egnn import model
@@ -200,9 +200,17 @@ class Pege:
             atom_numbers, ignore_missing=ignore_missing, pooling=pooling
         )
 
-    def get_residue_titration_curve(self, chain, resnumb):
-        if resnumb in ("NTR", "CTR"):
-            termini_condition = f"resname == '{resnumb}'"
+    def get_residue_atoms(self, chain, resnumb):
+        if isinstance(resnumb, str):
+            if resnumb[-1] in "NC":
+                resname = {"N": "NTR", "C": "CTR"}[resnumb[-1]]
+                resnumb = int(resnumb[:-1])
+                termini_condition = f"resname == '{resname}' and resnumb == {resnumb}"
+            else:
+                resnumb = int(resnumb)
+                termini_condition = (
+                    f"resname in ('NTR', 'CTR') and resnumb == {resnumb}"
+                )
         else:
             termini_condition = (
                 f"resname not in ('NTR', 'CTR') and resnumb == {resnumb}"
@@ -211,6 +219,10 @@ class Pege:
         atoms = self.as_df().query(
             f"chain == '{chain}' and {termini_condition} and feats == 0"
         )
+        return atoms
+
+    def get_residue_titration_curve(self, chain, resnumb):
+        atoms = self.get_residue_atoms(chain, resnumb)
 
         if len(atoms) == 0:
             return None
@@ -220,16 +232,11 @@ class Pege:
 
         resname = atoms["resname"].values[0]
 
-        n_hs = 0
-        if resname in ("NTR", "LYS"):
-            n_hs = 2
-        elif resname == "HIS":
-            n_hs = 1
-
-        tit_curve = {
-            pH_scale[i]: prot - n_hs
-            for i, prot in enumerate(self.h_probs[hs_i].sum(axis=0).detach().numpy())
-        }
+        tit_curve = {}
+        for i, pH in enumerate(pH_scale):
+            taut_probs = self.h_probs[hs_i, i]
+            _, prot_avg = self.fix_taut_probs(taut_probs, resname)
+            tit_curve[pH] = prot_avg
 
         return tit_curve
 
@@ -237,21 +244,13 @@ class Pege:
         if pH not in pH_scale:
             raise Exception("pH not valid.")
 
-        if resnumb in ("NTR", "CTR"):
-            termini_condition = f"resname == '{resnumb}'"
-        else:
-            termini_condition = (
-                f"resname not in ('NTR', 'CTR') and resnumb == {resnumb}"
-            )
-
-        atoms = self.as_df().query(
-            f"chain == '{chain}' and {termini_condition} and feats == 0"
-        )
+        atoms = self.get_residue_atoms(chain, resnumb)
 
         if len(atoms) == 0:
             return None, None, None
 
-        hs_i = atoms["anumb"].values
+        hs = list(atoms["anumb"].index)
+        hs_i = [list(self.hindices).index(i) for i in hs]
         resname = atoms["resname"].values[0]
 
         pH_i = pH_scale.index(pH)
@@ -259,26 +258,35 @@ class Pege:
 
         # assert order of tautomers
 
-        if resname in ("NTR", "LYS", "HIS"):
-            n_hs = 2
-            if resname == "HIS":
-                n_hs = 1
-            prot_avg = sum(taut_probs) - n_hs
-
-            tmp = 1 - taut_probs
-            taut_probs = flip(tmp, [0])
-        else:
-            taut_probs = taut_probs
-            prot_avg = sum(taut_probs)
+        taut_probs, prot_avg = self.fix_taut_probs(taut_probs, resname)
 
         tauts = list(range(len(taut_probs)))
         prot_state = random.choices(tauts, taut_probs)[0]
 
         return (
             prot_state,
-            prot_avg.detach().numpy().tolist(),
-            taut_probs.detach().numpy().tolist(),
+            prot_avg,
+            taut_probs,
         )
+
+    @staticmethod
+    def fix_taut_probs(taut_probs, resname):
+        if resname in ("NTR", "LYS", "HIS"):
+            tmp = 1 - taut_probs
+            taut_probs = flip(tmp, [0])
+
+        if sum(taut_probs) > 1:
+            taut_probs = (taut_probs / taut_probs.sum()) - 0.0000001
+
+        taut_probs = taut_probs.detach().numpy().tolist()
+        taut_probs.append(1 - sum(taut_probs))
+
+        if resname in ("NTR", "LYS", "HIS"):
+            prot_avg = taut_probs[-1]
+        else:
+            prot_avg = 1 - taut_probs[-1]
+
+        return taut_probs, prot_avg
 
     @staticmethod
     def apply_pool(t: Tensor, ptype: str) -> Tensor:
