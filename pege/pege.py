@@ -1,8 +1,12 @@
-from torch import Tensor
-from pege.egnn import model
+from torch import Tensor, flip
+import random
+
+# from pege.egnn import model
+from pege.egnn.model import model
 from pege.utils import pdb2feats
+from pege.constants import pH_scale
 import pandas as pd
-from pdbmender.formats import new_pqr_line
+from pdbmender.formats import new_pqr_line, gro2pdb
 
 
 class Pege:
@@ -30,9 +34,7 @@ class Pege:
         Returns
     """
 
-    def __init__(
-        self, path: str, save_final_pdb: bool = False, ignore_added: bool = True
-    ):
+    def __init__(self, path: str, save_final_pdb: bool = False, fix_pdb: bool = True):
         """
         Parameters
         ----------
@@ -40,22 +42,36 @@ class Pege:
             The protein PDB file path
         """
         self.path = path
-        self.coords, self.feats, self.anumbs, self.details, self.aindices = pdb2feats(
-            path, save=save_final_pdb
-        )
+
+        if path.endswith(".gro"):
+            f_in = path.replace(".gro", ".pdb")
+            gro2pdb(path, f_in)
+            path = f_in
+
+        (
+            self.coords,
+            self.feats,
+            self.anumbs,
+            self.details,
+            self.aindices,
+            self.chain_res,
+        ) = pdb2feats(path, save=save_final_pdb, fix_pdb=fix_pdb)
         self.natoms = self.coords.shape[1]
-        self.embs = model(self.coords, self.feats).squeeze()
+        self.hindices = (self.feats == 0).nonzero().squeeze()
+        self.embs, self.h_probs = model(self.coords, self.feats, self.hindices)
 
     def as_df(self) -> pd.DataFrame:
         aindices_old = list(self.aindices.keys())
         aindices_new = list(self.aindices.values())
         df_dict = {
             "anumb": self.anumbs,
-            "details": self.details,
-            "resnumbs": [i[1] for i in self.details],
+            "chain": [i[0] for i in self.details],
+            "resnumb": [i[1] for i in self.details],
+            "resname": [i[2] for i in self.details],
+            "aname": [i[3] for i in self.details],
             "embs": self.embs.detach().numpy().tolist(),
-            "feats": self.feats[0],
-            "coords": self.coords[0].tolist(),
+            "feats": self.feats,
+            "coords": self.coords.tolist(),
             "old_anumb": [
                 aindices_old[aindices_new.index(i)] if i in aindices_new else None
                 for i in range(len(self.anumbs))
@@ -67,7 +83,10 @@ class Pege:
         pdb = []
         for i, line_df in self.as_df().iterrows():
             x, y, z = line_df["coords"]
-            chain, resnumb, resname, aname, _ = line_df["details"]
+            chain = line_df["chain"]
+            resnumb = line_df["resnumb"]
+            resname = line_df["resname"]
+            aname = line_df["aname"]
             feat = line_df["feats"]
             anumb = line_df["anumb"]
 
@@ -175,10 +194,90 @@ class Pege:
             Can be turned off by using ignore_missing.
         """
         atom_numbers = list(
-            self.asdf().query("resnumbs == @residue_numbers")["old_anumb"]
+            self.as_df().query("resnumb == @residue_numbers")["old_anumb"]
         )
         return self.get_atoms(
             atom_numbers, ignore_missing=ignore_missing, pooling=pooling
+        )
+
+    def get_residue_titration_curve(self, chain, resnumb):
+        if resnumb in ("NTR", "CTR"):
+            termini_condition = f"resname == '{resnumb}'"
+        else:
+            termini_condition = (
+                f"resname not in ('NTR', 'CTR') and resnumb == {resnumb}"
+            )
+
+        atoms = self.as_df().query(
+            f"chain == '{chain}' and {termini_condition} and feats == 0"
+        )
+
+        if len(atoms) == 0:
+            return None
+
+        hs = list(atoms["anumb"].index)
+        hs_i = [list(self.hindices).index(i) for i in hs]
+
+        resname = atoms["resname"].values[0]
+
+        n_hs = 0
+        if resname in ("NTR", "LYS"):
+            n_hs = 2
+        elif resname == "HIS":
+            n_hs = 1
+
+        tit_curve = {
+            pH_scale[i]: prot - n_hs
+            for i, prot in enumerate(self.h_probs[hs_i].sum(axis=0).detach().numpy())
+        }
+
+        return tit_curve
+
+    def get_residue_taut_probs(self, chain, resnumb, pH):
+        if pH not in pH_scale:
+            raise Exception("pH not valid.")
+
+        if resnumb in ("NTR", "CTR"):
+            termini_condition = f"resname == '{resnumb}'"
+        else:
+            termini_condition = (
+                f"resname not in ('NTR', 'CTR') and resnumb == {resnumb}"
+            )
+
+        atoms = self.as_df().query(
+            f"chain == '{chain}' and {termini_condition} and feats == 0"
+        )
+
+        if len(atoms) == 0:
+            return None, None, None
+
+        hs_i = atoms["anumb"].values
+        resname = atoms["resname"].values[0]
+
+        pH_i = pH_scale.index(pH)
+        taut_probs = self.h_probs[hs_i, pH_i]
+
+        # assert order of tautomers
+
+        if resname in ("NTR", "LYS", "HIS"):
+            n_hs = 2
+            if resname == "HIS":
+                n_hs = 1
+            prot_avg = sum(taut_probs) - n_hs
+
+            tmp = 1 - taut_probs
+            taut_probs = flip(tmp, [0])
+        else:
+            taut_probs = taut_probs
+            prot_avg = sum(taut_probs)
+
+        tauts = list(range(len(taut_probs)))
+        prot_state = random.choices(tauts, taut_probs)[0]
+
+        return (
+            prot_state,
+            prot_avg.detach().numpy().tolist(),
+            taut_probs.detach().numpy().tolist(),
         )
 
     @staticmethod
@@ -202,3 +301,6 @@ class Pege:
         elif ptype == "sum":
             t = t.sum(dim=0)
         return t
+
+
+# TODO: check S-S how to deal with bridges

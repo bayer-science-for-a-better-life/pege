@@ -1,3 +1,7 @@
+import numpy as np
+
+pH_scale = list(np.arange(-6, 20.1, 0.5))
+
 AA_HS = {
     "ASP": ["HD11", "HD21", "HD12", "HD22"],
     "CTR": ["HO11", "HO21", "HO12", "HO22"],
@@ -7,8 +11,8 @@ AA_HS = {
     "LYS": ["HZ1", "HZ2", "HZ3"],
     "NTR": ["H1", "H2", "H3"],
     "TYR": ["HH1", "HH2"],
-    "SER": ["HG1", "HG2", "HG3"],
-    "THR": ["HG1", "HG2", "HG3"],
+    "SER": ["HG1", "HG2", "HG3", "HG"],
+    "THR": ["HG1", "HG2", "HG3", "HG"],
 }
 
 OHE_ATOMS_GRAPH = {
@@ -31,5 +35,3 @@ OHE_ATOMS_GRAPH = {
     "SG_CYS": [(None, "SG")],
     "SD_MET": [("MET", "SD")],
 }
-
-# TODO: check S-S how to deal with bridges

@@ -80,7 +80,7 @@ def fix_structure(fname, ff):
     renumbered = mend_pdb(fname, pdb_cleaned, ff, ff, logfile=logfile_mend)
 
     chains = get_chains_from_file(fname)
-    chains_res = identify_tit_sites(pdb_cleaned, chains, add_ser_thr=True)
+    chains_res = identify_tit_sites(fname, chains, add_ser_thr=True)
 
     chains_res, cys_bridges = rm_cys_bridges(chains_res, logfile_mend)
 
@@ -131,21 +131,27 @@ def get_termini_info(fname, chains_res):
     return termini_resnumbs, termini_resnames
 
 
-def pdb2feats(fname: str, save=True, ff="GROMOS") -> tuple:
+def pdb2feats(fname: str, save=True, ff="GROMOS", fix_pdb=True) -> tuple:
     original_atom_details = get_atom_info(fname)
 
-    output_pdb, chains_res, renumbered = fix_structure(fname, ff)
+    if fix_pdb:
+        output_pdb, chains_res, renumbered = fix_structure(fname, ff)
+    else:
+        chains = get_chains_from_file(fname)
+        chains_res = identify_tit_sites(fname, chains, add_ser_thr=False)
+        output_pdb = fname
+        renumbered = {}
 
     termini_details = get_termini_info(fname, chains_res)
 
     coords, feats, anumbs, details, aindices = encode_structure(
-        output_pdb, termini_details, original_atom_details, renumbered
+        output_pdb, termini_details, original_atom_details, renumbered, fix_pdb
     )
 
     if not save:
         os.system(f"rm -f {output_pdb}")
 
-    return coords, feats, anumbs, details, aindices
+    return coords, feats, anumbs, details, aindices, chains_res
 
 
 def map_atoms_2_class(ohe_atoms: dict) -> dict:
@@ -165,6 +171,7 @@ def encode_structure(
     termini_details,
     original_atom_details,
     renumbered,
+    fix_pdb,
     to_include=OHE_ATOMS_GRAPH,
 ):
     termini_resnumbs, termini_resnames = termini_details
@@ -210,7 +217,7 @@ def encode_structure(
             coords.append((x, y, z))
             feats.append(res_ohe)
             anumbs.append(anumb)
-            details.append(ainfo)
+            details.append(ainfo[:-1])
 
             if resnumb in renumbered.keys():
                 old_resnumb, inscode = renumbered[resnumb]
@@ -221,7 +228,7 @@ def encode_structure(
                     old_resname = termini_resnames[chain][0]
                 elif resname == "CTR":
                     converted_atoms = {"O1": "O", "O2": "OXT"}
-                    if aname in converted_atoms:
+                    if aname in converted_atoms and fix_pdb:
                         old_aname = converted_atoms[aname]
                     old_resname = termini_resnames[chain][1]
                 ainfo_search = (chain, resnumb, old_resname, old_aname, " ")
@@ -239,7 +246,7 @@ def encode_structure(
                 warning_msg = f"WARNING: atom {anumb} in {output_pdb} will be ignored"
                 print(warning_msg, line.strip())
 
-    coords = torch.tensor(coords).reshape(1, -1, 3)
-    feats = torch.tensor(feats).reshape(1, -1)
+    coords = torch.tensor(coords)
+    feats = torch.tensor(feats)
 
     return coords, feats, anumbs, details, aindices

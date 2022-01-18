@@ -4,9 +4,14 @@ Protein embeddings to describe local electrostic enviroments
 
 # Installation & Basic Usage
 
-PEG is installable from the Pypi repo:
+PEGE is installable from the Pypi repo:
 ```bash
 python3 -m pip install pege
+```
+
+In order for the structure preprocessing to work python2 and gawk need to installed.
+```bash
+apt install python2 gawk
 ```
 
 Pege can be used to obtain protein embeddings as well as descriptors for specific `atom_numbers` from a `pdb` file:
