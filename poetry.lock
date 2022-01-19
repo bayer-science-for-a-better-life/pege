@@ -449,7 +449,7 @@ python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
 
 [[package]]
 name = "pdbmender"
-version = "0.3.3"
+version = "0.4.1"
 description = "Mend PDB files"
 category = "main"
 optional = false
@@ -791,7 +791,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.6.2,<4.0"
-content-hash = "75c46efbc645cb13009a7451c71ea405eab223ec6be2c8d05092090287bde02b"
+content-hash = "c78ca28214c8ef293a336761c11334561f791a0b4a0148df6c483ee0f6b8d0ca"
 
 [metadata.files]
 absl-py = [
@@ -1289,8 +1289,8 @@ pathspec = [
     {file = "pathspec-0.9.0.tar.gz", hash = "sha256:e564499435a2673d586f6b2130bb5b95f04a3ba06f81b8f895b651a3c76aabb1"},
 ]
 pdbmender = [
-    {file = "pdbmender-0.3.3-py3-none-any.whl", hash = "sha256:53c6385daddf222eeca25d355398eb816aca6775efd94c8f09b5f3a91d1ed26d"},
-    {file = "pdbmender-0.3.3.tar.gz", hash = "sha256:c5a2ee5f8d083f78f727edc895398a485216bac0fdbd894442e4e81472b2c254"},
+    {file = "pdbmender-0.4.1-py3-none-any.whl", hash = "sha256:ec4b6c9f0643c21e9a12f72654d203f48f07bb36d31d3c673ae017f46890bcc7"},
+    {file = "pdbmender-0.4.1.tar.gz", hash = "sha256:831224fd1b7429f32719d1142f419c457e82ad1e45b7081bd6aaa6233146abc8"},
 ]
 platformdirs = [
     {file = "platformdirs-2.4.0-py3-none-any.whl", hash = "sha256:8868bbe3c3c80d42f20156f22e7131d2fb321f5bc86a2a345375c6481a67021d"},
