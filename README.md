@@ -1,6 +1,6 @@
-# Protein Enviroment Graph Embeddings (PEGE)
+# Protein Environment Graph Embeddings (PEGE)
 
-Protein embeddings to describe local electrostic enviroments
+Protein embeddings to describe local electrostic environments
 
 # Installation & Basic Usage
 
