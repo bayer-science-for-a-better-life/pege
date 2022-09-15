@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from torch import jit, stack, Tensor
+from torch import jit, stack, Tensor, tensor
 import torch_cluster
 import torch_sparse
 from pdbmender.formats import new_pqr_line, gro2pdb
@@ -195,7 +195,7 @@ class Pege:
         return embs
 
     def get_all_res_embs(self, chain: str):
-        embs = (
+        embs = list(
             self.as_df()
             .query(f'chain == "{chain}" and aname == "CA" ')["embs"]
             .drop_duplicates()
@@ -203,7 +203,7 @@ class Pege:
         )
         all_residues = self.get_resnumbs_w_insertion_code(chain)
 
-        return all_residues, embs
+        return all_residues, tensor(embs)
 
     def get_resnumbs_w_insertion_code(self, chain):
         residues = (
