@@ -9,7 +9,7 @@ multi_line_output = 3
 
 [tool.poetry]
 name = "pege"
-version = "1.2.0"
+version = "1.2.1"
 description = "Protein embeddings to describe local electrostic enviroments"
 authors = ["Pedro Reis <pdreis@fc.ul.pt>"]
 license = "MIT"
