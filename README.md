@@ -9,6 +9,8 @@ PEGE is installable from the Pypi repo:
 python3 -m pip install pege
 ```
 
+[Pytorch Geometry](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html) also needs to be installed
+
 In order for the structure preprocessing to work python2 and gawk need to installed.
 ```bash
 apt install python2 gawk
@@ -20,7 +22,7 @@ from pege import Pege
 
 protein = Pege(<pdb>)
 protein_emb = protein.get_protein()
-atoms_emb = protein.get_atoms([<atom_numbers>])
+all_res_embs = protein.get_all_res_embs(chain="A")
 ```
 
 # Documentation
@@ -30,5 +32,5 @@ TBA
 This source code is licensed under the MIT license found in the LICENSE file in the root directory of this source tree.
 
 # Contacts
-Please submit a github issue to report bugs and to request new features. Alternatively, you may email the developer [directly](mailto:pdreis@fc.ul.pt).
+Please submit a github issue to report bugs and to request new features. Alternatively, you may email the developer [directly](mailto:pedro.reis@bayer.com).
 

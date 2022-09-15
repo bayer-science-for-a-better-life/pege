@@ -1,7 +1,3 @@
-import numpy as np
-
-pH_scale = list(np.arange(-6, 20.1, 0.5))
-
 AA_HS = {
     "ASP": ["HD11", "HD21", "HD12", "HD22"],
     "CTR": ["HO11", "HO21", "HO12", "HO22"],
@@ -17,7 +13,29 @@ AA_HS = {
 
 OHE_ATOMS_GRAPH = {
     "H": [(res, atoms) for res, atoms in AA_HS.items()],
-    "CA": [(None, ["CA"])],
+    "C": [
+        (
+            None,
+            [
+                "C",
+                "CA",
+                "CB",
+                "CG",
+                "CG1",
+                "CG2",
+                "CD",
+                "CD1",
+                "CD2",
+                "CE",
+                "CE1",
+                "CE2",
+                "CE3",
+                "CZ",
+                "CZ2",
+                "CZ3",
+            ],
+        )
+    ],
     "N": [(None, ["N"])],
     "NZ_LYS": [("LYS", "NZ"), ("NTR", "N")],
     "NH_ARG": [("ARG", ["NH1", "NH2"])],

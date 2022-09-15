@@ -1,12 +1,10 @@
-from torch import Tensor, flip, clamp
-import random
-
-# from pege.egnn import model
-from pege.egnn.model import model
-from pege.utils import pdb2feats
-from pege.constants import pH_scale
+import os
 import pandas as pd
+from torch import jit, stack, Tensor
+import torch_cluster
+import torch_sparse
 from pdbmender.formats import new_pqr_line, gro2pdb
+from pege.utils import pdb2feats
 
 
 class Pege:
@@ -34,7 +32,13 @@ class Pege:
         Returns
     """
 
-    def __init__(self, path: str, save_final_pdb: bool = False, fix_pdb: bool = True):
+    def __init__(
+        self,
+        path: str,
+        save_final_pdb: bool = False,
+        fix_pdb: bool = True,
+        device="cpu",
+    ):
         """
         Parameters
         ----------
@@ -57,8 +61,11 @@ class Pege:
             self.chain_res,
         ) = pdb2feats(path, save=save_final_pdb, fix_pdb=fix_pdb)
         self.natoms = self.coords.shape[1]
-        self.hindices = (self.feats == 0).nonzero().squeeze()
-        self.embs, self.h_probs = model(self.coords, self.feats, self.hindices)
+
+        cur_dir = os.path.dirname(os.path.realpath(__file__))
+        model = jit.load(f"{cur_dir}/pege.pt").to(device)
+
+        self.embs = model(self.feats, self.coords)
 
     def as_df(self) -> pd.DataFrame:
         aindices_old = list(self.aindices.keys())
@@ -67,6 +74,7 @@ class Pege:
             "anumb": self.anumbs,
             "chain": [i[0] for i in self.details],
             "resnumb": [i[1] for i in self.details],
+            "res_icode": [i[4] for i in self.details],
             "resname": [i[2] for i in self.details],
             "aname": [i[3] for i in self.details],
             "embs": self.embs.detach().numpy().tolist(),
@@ -85,13 +93,27 @@ class Pege:
             x, y, z = line_df["coords"]
             chain = line_df["chain"]
             resnumb = line_df["resnumb"]
+            residcode = line_df["res_icode"]
             resname = line_df["resname"]
             aname = line_df["aname"]
             feat = line_df["feats"]
             anumb = line_df["anumb"]
 
+            if residcode == "":
+                residcode = " "
+
             new_line = new_pqr_line(
-                anumb, aname, resname, resnumb, x, y, z, feat, 0.0, chain=chain
+                anumb,
+                aname,
+                resname,
+                resnumb,
+                x,
+                y,
+                z,
+                feat,
+                0.0,
+                chain=chain,
+                icode=residcode,
             )
             pdb.append(new_line)
 
@@ -123,7 +145,11 @@ class Pege:
         return protein_emb
 
     def get_atoms(
-        self, atom_numbers: list, ignore_missing: bool = False, pooling: str = "avg"
+        self,
+        atom_numbers: list,
+        ignore_missing: bool = False,
+        show_atoms: bool = False,
+        pooling: str = "avg",
     ) -> Tensor:
         """Get the embeddings for a list of atoms.
 
@@ -150,23 +176,77 @@ class Pege:
             If some of the atoms present in atom_numbers are not found.
             Can be turned off by using ignore_missing.
         """
-        atom_is = []
-        for anumb in atom_numbers:
-            if anumb not in self.aindices:
-                if not ignore_missing:
-                    raise Exception(f"Atom {anumb} not present")
-            else:
-                a_i = self.aindices[anumb]
-                atom_is.append(a_i)
-        if not atom_is:
-            return None
-        pocket_embs = self.embs[atom_is]
+
+        atom_is = self.as_df().query(f"old_anumb == @atom_numbers").index
+
+        if ignore_missing:
+            missing = self.as_df().query(
+                f"old_anumb == @atom_numbers and old_numb != old_numb"
+            )
+            print(missing)
+            raise
+
+        if show_atoms:
+            print(self.as_df().query(f"old_anumb == @atom_numbers"))
+
+        embs = self.embs[atom_is]
         if pooling:
-            pocket_embs = self.apply_pool(pocket_embs, pooling)
-        return pocket_embs
+            embs = self.apply_pool(embs, pooling)
+        return embs
+
+    def get_all_res_embs(self, chain: str):
+        embs = (
+            self.as_df()
+            .query(f'chain == "{chain}" and aname == "CA" ')["embs"]
+            .drop_duplicates()
+            .values
+        )
+        all_residues = self.get_resnumbs_w_insertion_code(chain)
+
+        return all_residues, embs
+
+    def get_resnumbs_w_insertion_code(self, chain):
+        residues = (
+            self.as_df()
+            .query(f'chain == "{chain}"')[["resnumb", "res_icode"]]
+            .drop_duplicates()
+            .values
+        )
+
+        all_residues = []
+        for resnumb, insertion_code in residues:
+
+            if insertion_code:
+                resnumb = f"{resnumb}{insertion_code}"
+
+            all_residues.append(resnumb)
+        return all_residues
+
+    def get_all_custom_res_embs(
+        self,
+        chain: str,
+        use_anames: list = None,
+        show_atoms: bool = False,
+        pooling: str = "avg",
+    ):
+        all_residues = self.get_resnumbs_w_insertion_code(chain)
+
+        embs = self.get_residues(
+            chain,
+            all_residues,
+            use_anames=use_anames,
+            show_atoms=show_atoms,
+            pooling=pooling,
+        )
+        return all_residues, embs
 
     def get_residues(
-        self, residue_numbers: list, ignore_missing: bool = False, pooling: str = "avg"
+        self,
+        chain: str,
+        residue_numbers: list,
+        use_anames: list = None,
+        show_atoms: bool = True,
+        pooling: str = "avg",
     ) -> Tensor:
         """Get the embeddings for a list of residues.
 
@@ -174,11 +254,9 @@ class Pege:
 
         Parameters
         ----------
-        residue_numbers: list
+        residue_numbers: dict
             The number of the residues (in the original structure) for which to return the embeddings
 
-        ignore_missing: bool, optional
-            Controls whether an error is raised in case some atoms are not found (default is False)
         pooling : str, optional
             The type of pooling to be performed (default is avg)
 
@@ -187,18 +265,29 @@ class Pege:
         Tensor
             a tensor of (n, 64) dimensions representing the full protein
 
-        Raises
-        ------
-        Exception
-            If some of the atoms present in atom_numbers are not found.
-            Can be turned off by using ignore_missing.
         """
-        atom_numbers = list(
-            self.as_df().query("resnumb == @residue_numbers")["old_anumb"]
-        )
-        return self.get_atoms(
-            atom_numbers, ignore_missing=ignore_missing, pooling=pooling
-        )
+        res_embs = []
+        for resnumb in residue_numbers:
+            insertion_code = ""
+            if isinstance(resnumb, str) and resnumb[-1].isalpha():
+                insertion_code = resnumb[-1]
+                resnumb = int(resnumb[:-1])
+
+            query = f"chain == '{chain}' and resnumb == {resnumb} and res_icode == '{insertion_code}' and old_anumb == old_anumb"
+            if use_anames:
+                query += f" and aname in {use_anames}"
+
+            atom_numbers = list(self.as_df().query(query)["old_anumb"])
+
+            embs = self.get_atoms(
+                atom_numbers,
+                ignore_missing=False,
+                show_atoms=show_atoms,
+                pooling=pooling,
+            )
+            res_embs.append(embs)
+
+        return stack(res_embs)
 
     def get_residue_atoms(self, chain, resnumb):
         if isinstance(resnumb, str):
@@ -221,73 +310,6 @@ class Pege:
         )
         return atoms
 
-    def get_residue_titration_curve(self, chain, resnumb):
-        atoms = self.get_residue_atoms(chain, resnumb)
-
-        if len(atoms) == 0:
-            return None
-
-        hs = list(atoms["anumb"].index)
-        hs_i = [list(self.hindices).index(i) for i in hs]
-
-        resname = atoms["resname"].values[0]
-
-        tit_curve = {}
-        for i, pH in enumerate(pH_scale):
-            taut_probs = self.h_probs[hs_i, i]
-            _, prot_avg = self.fix_taut_probs(taut_probs, resname)
-            tit_curve[pH] = prot_avg
-
-        return tit_curve
-
-    def get_residue_taut_probs(self, chain, resnumb, pH):
-        if pH not in pH_scale:
-            raise Exception("pH not valid.")
-
-        atoms = self.get_residue_atoms(chain, resnumb)
-
-        if len(atoms) == 0:
-            return None, None, None
-
-        hs = list(atoms["anumb"].index)
-        hs_i = [list(self.hindices).index(i) for i in hs]
-        resname = atoms["resname"].values[0]
-
-        pH_i = pH_scale.index(pH)
-        taut_probs = self.h_probs[hs_i, pH_i]
-
-        # assert order of tautomers
-
-        taut_probs, prot_avg = self.fix_taut_probs(taut_probs, resname)
-
-        tauts = list(range(len(taut_probs)))
-        prot_state = random.choices(tauts, taut_probs)[0]
-
-        return (
-            prot_state,
-            prot_avg,
-            taut_probs,
-        )
-
-    @staticmethod
-    def fix_taut_probs(taut_probs, resname):
-        if resname in ("NTR", "LYS", "HIS"):
-            tmp = 1 - taut_probs
-            taut_probs = flip(tmp, [0])
-
-        if sum(taut_probs) > 1:
-            taut_probs = (taut_probs / taut_probs.sum()) - 0.0000001
-
-        taut_probs = taut_probs.detach().numpy().tolist()
-        taut_probs.append(1 - sum(taut_probs))
-
-        if resname in ("NTR", "LYS", "HIS"):
-            prot_avg = taut_probs[-1]
-        else:
-            prot_avg = 1 - taut_probs[-1]
-
-        return taut_probs, prot_avg
-
     @staticmethod
     def apply_pool(t: Tensor, ptype: str) -> Tensor:
         """Applies a type of pooling
@@ -309,6 +331,3 @@ class Pege:
         elif ptype == "sum":
             t = t.sum(dim=0)
         return t
-
-
-# TODO: check S-S how to deal with bridges

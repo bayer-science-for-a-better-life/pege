@@ -1,4 +1,4 @@
-import torch
+from torch import tensor
 import os
 from pdbmender import (
     mend_pdb,
@@ -79,13 +79,13 @@ def fix_structure(fname, ff):
     logfile_mend = "LOG_pdb2pqr"
     renumbered = mend_pdb(fname, pdb_cleaned, ff, ff, logfile=logfile_mend)
 
-    chains = get_chains_from_file(fname)
-    chains_res = identify_tit_sites(fname, chains, add_ser_thr=True)
+    chains = get_chains_from_file(pdb_cleaned)
+    chains_res = identify_tit_sites(pdb_cleaned, chains, add_ser_thr=True)
 
     chains_res, cys_bridges = rm_cys_bridges(chains_res, logfile_mend)
 
     old_ctrs = {
-        chain: resnumb
+        chain: [int(resnumb)]
         for chain, residues in chains_res.items()
         for resnumb, resname in residues.items()
         if resname == "CTR"
@@ -187,6 +187,11 @@ def encode_structure(
     for line in iter_f(output_pdb):
         aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
 
+        if resname == "CY0":
+            resname = "CYS"
+        elif resname == "ILE" and aname == "CD":
+            aname = "CD1"
+
         b, icode = line[16], line[26]
         if b not in (" ", "A") or icode != " ":
             continue
@@ -217,11 +222,13 @@ def encode_structure(
             coords.append((x, y, z))
             feats.append(res_ohe)
             anumbs.append(anumb)
-            details.append(ainfo[:-1])
+            details.append(list(ainfo[:-1]) + [""])
 
-            if resnumb in renumbered.keys():
-                old_resnumb, inscode = renumbered[resnumb]
+            if chain in renumbered.keys() and resnumb in renumbered[chain]:
+                old_resnumb, inscode = renumbered[chain][resnumb]
                 ainfo_search = (chain, old_resnumb, resname, aname, inscode)
+                details[-1][1] = old_resnumb
+                details[-1][4] = f"{inscode}"
             elif resname in ("NTR", "CTR"):
                 old_aname = aname
                 if resname == "NTR":
@@ -239,14 +246,13 @@ def encode_structure(
                 old_anumb = list(original_atom_numbs)[
                     list(original_atom_infos).index(ainfo_search)
                 ]
-                aindices[old_anumb] = len(anumbs) - 1
-                # print(f'{line.strip()}   {res:10}   {old_anumb}')
+                aindices[old_anumb] = len(anumbs) - 1                
 
             elif res != "H":
                 warning_msg = f"WARNING: atom {anumb} in {output_pdb} will be ignored"
                 print(warning_msg, line.strip())
 
-    coords = torch.tensor(coords)
-    feats = torch.tensor(feats)
+    coords = tensor(coords)
+    feats = tensor(feats)
 
     return coords, feats, anumbs, details, aindices
