@@ -6,9 +6,14 @@ from pege import Pege
 
 fname = "1cet.pdb"
 protein = Pege(fname, save_final_pdb=True, fix_pdb=True)
-protein.as_pdb(to_file="1cet_encoded.pdb")
+# protein.as_pdb(to_file="1cet_encoded.pdb")
 
 df_prot = protein.as_df()
+
+
+from IPython import embed
+embed()
+exit()
 
 # print(df_prot.query("resnumb == 73 and res_icode == 'A'"))
 

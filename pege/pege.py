@@ -57,7 +57,7 @@ class Pege:
             self.feats,
             self.anumbs,
             self.details,
-            self.aindices,
+            self.old_anumbs,
             self.chain_res,
         ) = pdb2feats(path, save=save_final_pdb, fix_pdb=fix_pdb)
         self.natoms = self.coords.shape[1]
@@ -67,9 +67,7 @@ class Pege:
 
         self.embs = model(self.feats, self.coords)
 
-    def as_df(self) -> pd.DataFrame:
-        aindices_old = list(self.aindices.keys())
-        aindices_new = list(self.aindices.values())
+    def as_df(self) -> pd.DataFrame:        
         df_dict = {
             "anumb": self.anumbs,
             "chain": [i[0] for i in self.details],
@@ -80,10 +78,7 @@ class Pege:
             "embs": self.embs.detach().numpy().tolist(),
             "feats": self.feats,
             "coords": self.coords.tolist(),
-            "old_anumb": [
-                aindices_old[aindices_new.index(i)] if i in aindices_new else None
-                for i in range(len(self.anumbs))
-            ],
+            "old_anumb": self.old_anumbs,
         }
         return pd.DataFrame(df_dict)
 

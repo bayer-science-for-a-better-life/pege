@@ -144,14 +144,14 @@ def pdb2feats(fname: str, save=True, ff="GROMOS", fix_pdb=True) -> tuple:
 
     termini_details = get_termini_info(fname, chains_res)
 
-    coords, feats, anumbs, details, aindices = encode_structure(
+    coords, feats, anumbs, details, old_anumbs = encode_structure(
         output_pdb, termini_details, original_atom_details, renumbered, fix_pdb
     )
 
-    if not save:
+    if not save and fix_pdb:
         os.system(f"rm -f {output_pdb}")
 
-    return coords, feats, anumbs, details, aindices, chains_res
+    return coords, feats, anumbs, details, old_anumbs, chains_res
 
 
 def map_atoms_2_class(ohe_atoms: dict) -> dict:
@@ -177,8 +177,11 @@ def encode_structure(
     termini_resnumbs, termini_resnames = termini_details
     original_atom_numbs, original_atom_infos = original_atom_details
 
+    last_anumb = len(list(original_atom_numbs))
+    missing_i = 0
+
     coords, feats, anumbs, details = [], [], [], []
-    aindices = {}
+    old_anumbs = []
 
     atom_classes = list(to_include.keys())
     atoms_2_class = map_atoms_2_class(to_include)
@@ -187,10 +190,11 @@ def encode_structure(
     for line in iter_f(output_pdb):
         aname, anumb, resname, chain, resnumb, x, y, z = read_pdb_line(line)
 
-        if resname == "CY0":
-            resname = "CYS"
-        elif resname == "ILE" and aname == "CD":
-            aname = "CD1"
+        if fix_pdb:
+            if resname == "CY0":
+                resname = "CYS"
+            elif resname == "ILE" and aname == "CD":
+                aname = "CD1"
 
         b, icode = line[16], line[26]
         if b not in (" ", "A") or icode != " ":
@@ -229,7 +233,7 @@ def encode_structure(
                 ainfo_search = (chain, old_resnumb, resname, aname, inscode)
                 details[-1][1] = old_resnumb
                 details[-1][4] = f"{inscode}"
-            elif resname in ("NTR", "CTR"):
+            if resname in ("NTR", "CTR"):
                 old_aname = aname
                 if resname == "NTR":
                     old_resname = termini_resnames[chain][0]
@@ -245,14 +249,17 @@ def encode_structure(
             if ainfo_search in original_atom_infos:
                 old_anumb = list(original_atom_numbs)[
                     list(original_atom_infos).index(ainfo_search)
-                ]
-                aindices[old_anumb] = len(anumbs) - 1                
+                ]                            
+                old_anumbs.append(old_anumb)
 
-            elif res != "H":
-                warning_msg = f"WARNING: atom {anumb} in {output_pdb} will be ignored"
-                print(warning_msg, line.strip())
+            else:
+                missing_i += 1
+                old_anumbs.append(None)          
+                if ainfo_search[3][0] != "H":
+                    warning_msg = f"WARNING: atom {anumb} in {output_pdb} will be ignored"
+                    print(warning_msg, ainfo_search)
 
     coords = tensor(coords)
     feats = tensor(feats)
 
-    return coords, feats, anumbs, details, aindices
+    return coords, feats, anumbs, details, old_anumbs
